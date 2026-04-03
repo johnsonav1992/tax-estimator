@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { BracketsEditor } from "./components/BracketsEditor/BracketsEditor";
 import { Hero } from "./components/Hero/Hero";
 import { InlineSummary } from "./components/InlineSummary/InlineSummary";
@@ -11,31 +12,35 @@ import { BRACKETS_2026, STANDARD_DEDUCTION_2026 } from "./data/taxData";
 import { calcSummary, normalizeBrackets } from "./lib/calculations";
 import { formatMoney } from "./lib/format";
 import { initialState } from "./lib/state";
+import { incomeTaxBracketsQueryOptions } from "./queries/incomeTaxQuery";
 import type { BracketRow, FormState } from "./types";
 
 export default function App() {
   const [form, setForm] = useState<FormState>(() => initialState("married_joint"));
+
+  const {
+    data: apiBrackets,
+    isLoading: bracketsLoading,
+    isError: bracketsError,
+  } = useQuery(
+    incomeTaxBracketsQueryOptions({
+      year: 2026,
+      country: "US",
+      regions: "federal",
+    }),
+  );
+
+  const bracketsByStatus = apiBrackets ?? BRACKETS_2026;
 
   const defaultStandardDeduction = useMemo(
     () => STANDARD_DEDUCTION_2026[form.filingStatus],
     [form.filingStatus],
   );
 
-  const defaultBrackets = useMemo(() => BRACKETS_2026[form.filingStatus], [form.filingStatus]);
-
-  useEffect(() => {
-    if (!form.useCustomBrackets) {
-      const status = form.filingStatus;
-      setForm((prev) => ({
-        ...prev,
-        customStandardDeduction: STANDARD_DEDUCTION_2026[status],
-        customBrackets: BRACKETS_2026[status].map((bracket, index) => ({
-          ...bracket,
-          id: `bracket-${index + 1}`,
-        })),
-      }));
-    }
-  }, [form.filingStatus, form.useCustomBrackets]);
+  const defaultBrackets = useMemo(
+    () => bracketsByStatus[form.filingStatus],
+    [bracketsByStatus, form.filingStatus],
+  );
 
   const bracketsToUse = form.useCustomBrackets ? form.customBrackets : defaultBrackets;
   const normalizedBrackets = useMemo(() => normalizeBrackets(bracketsToUse), [bracketsToUse]);
@@ -135,7 +140,7 @@ export default function App() {
             ...prev,
             filingStatus: value,
             customStandardDeduction: STANDARD_DEDUCTION_2026[value],
-            customBrackets: BRACKETS_2026[value].map((bracket, index) => ({
+            customBrackets: bracketsByStatus[value].map((bracket, index) => ({
               ...bracket,
               id: `bracket-${index + 1}`,
             })),
@@ -493,7 +498,7 @@ export default function App() {
               setForm((prev) => ({
                 ...prev,
                 customStandardDeduction: STANDARD_DEDUCTION_2026[prev.filingStatus],
-                customBrackets: BRACKETS_2026[prev.filingStatus].map((bracket, index) => ({
+                customBrackets: bracketsByStatus[prev.filingStatus].map((bracket, index) => ({
                   ...bracket,
                   id: `bracket-${index + 1}`,
                 })),
@@ -503,6 +508,13 @@ export default function App() {
           />
         </Section>
       </main>
+
+      <div className="notice">
+        {bracketsLoading ? "Loading tax brackets..." : null}
+        {bracketsError
+          ? "Using fallback brackets. Add VITE_TAX_API_KEY to enable live data."
+          : null}
+      </div>
 
       <footer className="footer">
         <p>
